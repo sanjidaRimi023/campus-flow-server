@@ -142,15 +142,102 @@ async function run() {
             date: {
               $gte: startDate,
               $lt: endDate,
-            }
+            },
           };
         }
-        const transactions = await transactionsCollection('transactions').find(query).toArray();
-        res.json(apiResponse(true, transactions))
+        const transactions = await transactionsCollection("transactions")
+          .find(query)
+          .toArray();
+        res.json(apiResponse(true, transactions));
       } catch (error) {
-        res.status(500).json(apiResponse(false, null, error.message))
+        res.status(500).json(apiResponse(false, null, error.message));
       }
     });
+    app.post("/api/transactions", async (req, res) => {
+      try {
+        const { type, category, amount, description, date } = req.body;
+        if (!type || !category || !amount || !description || !date) {
+          return res
+            .status(400)
+            .json(apiResponse(false, null, "Missing required fields"));
+        }
+        if (typeof amount !== "number" || amount <= 0) {
+          return res
+            .status(400)
+            .json(apiResponse(false, null, "amount must be a positive number"));
+        }
+        const result = await transactionsCollection.insertOne({
+          type,
+          category,
+          amount,
+          description,
+          date: new Date(date),
+          createdAt: new Date(),
+        });
+
+        res.status(201).json(
+          apiResponse(true, {
+            insertedId: result.insertedId,
+          })
+        );
+      } catch (error) {
+        res.status(500).json(apiResponse(false, null, error.message));
+      }
+    });
+    app.get("/api/transactions/summary", async (req, res) => {
+      try {
+        const { month } = req.body;
+        if (!month) {
+          return res
+            .status(400)
+            .json(apiResponse(false, null, "Month parameter is required"));
+        }
+        const startDate = new Date(month);
+        const endDate = new Date(startDate);
+        endDate.setMonth(endDate.getMonth() + 1);
+        // get transaction for the month
+        const transactions = await transactionsCollection.find({
+          date: {
+            $gte: startDate,
+            $lt: endDate,
+          }.toArray(),
+        });
+
+        const summary = {
+          income: 0,
+          expense: 0,
+          byCategory: {},
+        };
+
+        transactions.forEach((transaction) => {
+          if (transaction.type === "income") {
+            summary.income += transaction.amount;
+          } else if (transaction.type === "expense") {
+            summary.expense += transaction.amount;
+          }
+          if (!summary.byCategory[transaction.category]) {
+            summary.byCategory[transaction.category] = {
+              income: 0,
+              expense: 0,
+            };
+          }
+          if (transaction.type === "income") {
+            summary.byCategory[transaction.category].income +=
+              transaction.amount;
+          } else {
+            summary.byCategory[transaction.category].expense +=
+              transaction.amount;
+          }
+        });
+        summary.net = summary.income - summary.expense;
+        res.json(apiResponse(true, summary));
+      } catch (error) {
+        res.status(500).json(apiResponse(false, null, error.message));
+      }
+    });
+
+
+    
   } catch (error) {
     console.error("Database connection failed:", error);
   } finally {
