@@ -130,6 +130,7 @@ async function run() {
       }
     });
     // Transactions api
+
     app.get("/api/transactions", async (req, res) => {
       try {
         const { month } = req.query;
@@ -184,6 +185,8 @@ async function run() {
         res.status(500).json(apiResponse(false, null, error.message));
       }
     });
+
+    // get /api/transactions/summary?month=2025-08 — sums by category / income vs expense
     app.get("/api/transactions/summary", async (req, res) => {
       try {
         const { month } = req.body;
@@ -236,8 +239,97 @@ async function run() {
       }
     });
 
+    // Tasks API Endpoints
 
-    
+    // GET /api/tasks — list tasks
+    app.get("/api/tasks", async (req, res) => {
+      try {
+        const tasks = await db.collection("tasks").find({}).toArray();
+        res.json(apiResponse(true, tasks));
+      } catch (error) {
+        res.status(500).json(apiResponse(false, null, error.message));
+      }
+    });
+
+    // POST /api/tasks — add task
+    app.post("/api/tasks", async (req, res) => {
+      try {
+        const {
+          title,
+          description,
+          dueDate,
+          priority,
+          completed,
+          pomodoroCount,
+        } = req.body;
+
+        if (!title) {
+          return res
+            .status(400)
+            .json(apiResponse(false, null, "Title is required"));
+        }
+
+        const result = await db.collection("tasks").insertOne({
+          title,
+          description: description || "",
+          dueDate: dueDate ? new Date(dueDate) : null,
+          priority: priority || "medium",
+          completed: completed || false,
+          pomodoroCount: pomodoroCount || 0,
+          createdAt: new Date(),
+        });
+
+        res
+          .status(201)
+          .json(apiResponse(true, { insertedId: result.insertedId }));
+      } catch (error) {
+        res.status(500).json(apiResponse(false, null, error.message));
+      }
+    });
+    // PUT /api/tasks/:id — mark completed / update pomodoroCount
+    app.put("/api/tasks/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const {
+          completed,
+          pomodoroCount,
+          title,
+          description,
+          dueDate,
+          priority,
+        } = req.body;
+
+        if (!ObjectId.isValid(id)) {
+          return res
+            .status(400)
+            .json(apiResponse(false, null, "Invalid ID format"));
+        }
+
+        const updateFields = { updatedAt: new Date() };
+
+        if (typeof completed === "boolean") updateFields.completed = completed;
+        if (typeof pomodoroCount === "number")
+          updateFields.pomodoroCount = pomodoroCount;
+        if (title) updateFields.title = title;
+        if (description !== undefined) updateFields.description = description;
+        if (dueDate) updateFields.dueDate = new Date(dueDate);
+        if (priority) updateFields.priority = priority;
+
+        const result = await db
+          .collection("tasks")
+          .updateOne({ _id: new ObjectId(id) }, { $set: updateFields });
+
+        if (result.matchedCount === 0) {
+          return res
+            .status(404)
+            .json(apiResponse(false, null, "Task not found"));
+        }
+
+        res.json(apiResponse(true, { modifiedCount: result.modifiedCount }));
+      } catch (error) {
+        res.status(500).json(apiResponse(false, null, error.message));
+      }
+    });
   } catch (error) {
     console.error("Database connection failed:", error);
   } finally {
